@@ -1597,6 +1597,402 @@ export default function SettingsPanel({
                             )}
                           </div>
                         </div>
+
+                        {/* Row 3: Stage 2 Single K Form Filtering */}
+                        <div className="pt-4 border-t border-slate-100 col-span-1 md:col-span-3">
+                          <h4 className="text-xs font-black text-rose-500 uppercase tracking-wider mb-1">⚡ Stage 2 单K形态过滤 (单K止盈止损参数2)</h4>
+                        </div>
+
+                        {/* 关联M设置 (单K2) */}
+                        <div className="p-5 bg-white rounded-3xl border border-slate-100 space-y-4">
+                          <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-1">
+                            <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">关联M设置 (单K2)</span>
+                            <Toggle 
+                              enabled={localSettings.order?.secondSingleKMLinkEnabled ?? false} 
+                              onChange={e => setLocalSettings({
+                                ...localSettings, 
+                                order: {
+                                  ...localSettings.order, 
+                                  secondSingleKMLinkEnabled: e
+                                }
+                              })} 
+                            />
+                          </div>
+                          <Input 
+                            label="关联M值" 
+                            type="number" 
+                            value={String(localSettings.order?.secondSingleKMLinkValue ?? 1800)} 
+                            onChange={v => setLocalSettings({
+                              ...localSettings, 
+                              order: {
+                                ...localSettings.order, 
+                                secondSingleKMLinkValue: Number(v)
+                              }
+                            })} 
+                          />
+                        </div>
+
+                        {/* 止盈设置 (单K2) */}
+                        <div className="p-5 bg-white rounded-3xl border border-slate-100 space-y-4">
+                          <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">止盈设置 (单K2)</span>
+                              <Toggle 
+                                enabled={localSettings.order?.secondSingleKTpEnabled ?? true} 
+                                onChange={e => setLocalSettings({
+                                  ...localSettings, 
+                                  order: {
+                                    ...localSettings.order, 
+                                    secondSingleKTpEnabled: e
+                                  }
+                                })} 
+                              />
+                            </div>
+                          </div>
+                          
+                          {/* 多单止盈 */}
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <span className="text-[10px] font-bold text-slate-400">多单止盈模式</span>
+                                <Toggle 
+                                  enabled={localSettings.order?.secondSingleKTpBuyEnabled ?? true} 
+                                  onChange={e => setLocalSettings({
+                                    ...localSettings, 
+                                    order: {
+                                      ...localSettings.order, 
+                                      secondSingleKTpBuyEnabled: e
+                                    }
+                                  })} 
+                                />
+                              </div>
+                              <div className="flex bg-slate-200 p-0.5 rounded-lg">
+                                {(['ratio', 'fixed', 'amp'] as const).map(m => (
+                                  <button 
+                                    key={m} 
+                                    type="button"
+                                    onClick={() => setLocalSettings({
+                                      ...localSettings, 
+                                      order: {
+                                        ...localSettings.order, 
+                                        secondSingleKTpModeBuy: m
+                                      }
+                                    })}
+                                    className={`px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${
+                                      (localSettings.order?.secondSingleKTpModeBuy ?? 'amp') === m 
+                                        ? 'bg-white text-emerald-600 shadow-sm' 
+                                        : 'text-slate-500'
+                                    }`}
+                                  >
+                                    {m === 'ratio' ? '比例' : m === 'fixed' ? '固定' : '振比'}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            {(localSettings.order?.secondSingleKTpModeBuy ?? 'amp') === 'ratio' ? (
+                              <Input 
+                                label="多 比例 TPB2 (%)" 
+                                type="number" 
+                                value={String(localSettings.order?.secondSingleKTpRatioBuy ?? 25)} 
+                                onChange={v => setLocalSettings({
+                                  ...localSettings, 
+                                  order: {
+                                    ...localSettings.order, 
+                                    secondSingleKTpRatioBuy: Number(v)
+                                  }
+                                })} 
+                              />
+                            ) : (localSettings.order?.secondSingleKTpModeBuy ?? 'amp') === 'fixed' ? (
+                              <Input 
+                                label="多 固定值 (%)" 
+                                type="number" 
+                                value={String(localSettings.order?.secondSingleKTpFixedBuy ?? 2)} 
+                                onChange={v => setLocalSettings({
+                                  ...localSettings, 
+                                  order: {
+                                    ...localSettings.order, 
+                                    secondSingleKTpFixedBuy: Number(v)
+                                  }
+                                })} 
+                              />
+                            ) : (
+                              <Input 
+                                label="多 振比 (%)" 
+                                type="number" 
+                                value={String(localSettings.order?.secondSingleKTpAmpBuy ?? 25)} 
+                                onChange={v => setLocalSettings({
+                                  ...localSettings, 
+                                  order: {
+                                    ...localSettings.order, 
+                                    secondSingleKTpAmpBuy: Number(v)
+                                  }
+                                })} 
+                              />
+                            )}
+                          </div>
+
+                          {/* 空单止盈 */}
+                          <div className="space-y-3 border-t border-slate-100 pt-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <span className="text-[10px] font-bold text-slate-400">空单止盈模式</span>
+                                <Toggle 
+                                  enabled={localSettings.order?.secondSingleKTpSellEnabled ?? true} 
+                                  onChange={e => setLocalSettings({
+                                    ...localSettings, 
+                                    order: {
+                                      ...localSettings.order, 
+                                      secondSingleKTpSellEnabled: e
+                                    }
+                                  })} 
+                                />
+                              </div>
+                              <div className="flex bg-slate-200 p-0.5 rounded-lg">
+                                {(['ratio', 'fixed', 'amp'] as const).map(m => (
+                                  <button 
+                                    key={m} 
+                                    type="button"
+                                    onClick={() => setLocalSettings({
+                                      ...localSettings, 
+                                      order: {
+                                        ...localSettings.order, 
+                                        secondSingleKTpModeSell: m
+                                      }
+                                    })}
+                                    className={`px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${
+                                      (localSettings.order?.secondSingleKTpModeSell ?? 'amp') === m 
+                                        ? 'bg-white text-emerald-600 shadow-sm' 
+                                        : 'text-slate-500'
+                                    }`}
+                                  >
+                                    {m === 'ratio' ? '比例' : m === 'fixed' ? '固定' : '振比'}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            {(localSettings.order?.secondSingleKTpModeSell ?? 'amp') === 'ratio' ? (
+                              <Input 
+                                label="空 比例 TPS2 (%)" 
+                                type="number" 
+                                value={String(localSettings.order?.secondSingleKTpRatioSell ?? 25)} 
+                                onChange={v => setLocalSettings({
+                                  ...localSettings, 
+                                  order: {
+                                    ...localSettings.order, 
+                                    secondSingleKTpRatioSell: Number(v)
+                                  }
+                                })} 
+                              />
+                            ) : (localSettings.order?.secondSingleKTpModeSell ?? 'amp') === 'fixed' ? (
+                              <Input 
+                                label="空 固定值 (%)" 
+                                type="number" 
+                                value={String(localSettings.order?.secondSingleKTpFixedSell ?? 2)} 
+                                onChange={v => setLocalSettings({
+                                  ...localSettings, 
+                                  order: {
+                                    ...localSettings.order, 
+                                    secondSingleKTpFixedSell: Number(v)
+                                  }
+                                })} 
+                              />
+                            ) : (
+                              <Input 
+                                label="空 振比 (%)" 
+                                type="number" 
+                                value={String(localSettings.order?.secondSingleKTpAmpSell ?? 25)} 
+                                onChange={v => setLocalSettings({
+                                  ...localSettings, 
+                                  order: {
+                                    ...localSettings.order, 
+                                    secondSingleKTpAmpSell: Number(v)
+                                  }
+                                })} 
+                              />
+                            )}
+                          </div>
+                        </div>
+
+                        {/* 止损设置 (单K2) */}
+                        <div className="p-5 bg-white rounded-3xl border border-slate-100 space-y-4">
+                          <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-black text-slate-900 uppercase tracking-widest">止损设置 (单K2)</span>
+                              <Toggle 
+                                enabled={localSettings.order?.secondSingleKSlEnabled ?? true} 
+                                onChange={e => setLocalSettings({
+                                  ...localSettings, 
+                                  order: {
+                                    ...localSettings.order, 
+                                    secondSingleKSlEnabled: e
+                                  }
+                                })} 
+                              />
+                            </div>
+                          </div>
+
+                          {/* 多单止损 */}
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <span className="text-[10px] font-bold text-slate-400">多单止损模式</span>
+                                <Toggle 
+                                  enabled={localSettings.order?.secondSingleKSlBuyEnabled ?? true} 
+                                  onChange={e => setLocalSettings({
+                                    ...localSettings, 
+                                    order: {
+                                      ...localSettings.order, 
+                                      secondSingleKSlBuyEnabled: e
+                                    }
+                                  })} 
+                                />
+                              </div>
+                              <div className="flex bg-slate-200 p-0.5 rounded-lg">
+                                {(['ratio', 'fixed', 'amp'] as const).map(m => (
+                                  <button 
+                                    key={m} 
+                                    type="button"
+                                    onClick={() => setLocalSettings({
+                                      ...localSettings, 
+                                      order: {
+                                        ...localSettings.order, 
+                                        secondSingleKSlModeBuy: m
+                                      }
+                                    })}
+                                    className={`px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${
+                                      (localSettings.order?.secondSingleKSlModeBuy ?? 'fixed') === m 
+                                        ? 'bg-white text-rose-600 shadow-sm' 
+                                        : 'text-slate-500'
+                                    }`}
+                                  >
+                                    {m === 'ratio' ? '比例' : m === 'fixed' ? '固定' : '振比'}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            {(localSettings.order?.secondSingleKSlModeBuy ?? 'fixed') === 'ratio' ? (
+                              <Input 
+                                label="多 比例 SLB2 (%)" 
+                                type="number" 
+                                value={String(localSettings.order?.secondSingleKSlRatioBuy ?? 20)} 
+                                onChange={v => setLocalSettings({
+                                  ...localSettings, 
+                                  order: {
+                                    ...localSettings.order, 
+                                    secondSingleKSlRatioBuy: Number(v)
+                                  }
+                                })} 
+                              />
+                            ) : (localSettings.order?.secondSingleKSlModeBuy ?? 'fixed') === 'fixed' ? (
+                              <Input 
+                                label="多 固定值 (%)" 
+                                type="number" 
+                                value={String(localSettings.order?.secondSingleKSlFixedBuy ?? 20)} 
+                                onChange={v => setLocalSettings({
+                                  ...localSettings, 
+                                  order: {
+                                    ...localSettings.order, 
+                                    secondSingleKSlFixedBuy: Number(v)
+                                  }
+                                })} 
+                              />
+                            ) : (
+                              <Input 
+                                label="多 振比 (%)" 
+                                type="number" 
+                                value={String(localSettings.order?.secondSingleKSlAmpBuy ?? 20)} 
+                                onChange={v => setLocalSettings({
+                                  ...localSettings, 
+                                  order: {
+                                    ...localSettings.order, 
+                                    secondSingleKSlAmpBuy: Number(v)
+                                  }
+                                })} 
+                              />
+                            )}
+                          </div>
+
+                          {/* 空单止损 */}
+                          <div className="space-y-3 border-t border-slate-100 pt-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <span className="text-[10px] font-bold text-slate-400">空单止损模式</span>
+                                <Toggle 
+                                  enabled={localSettings.order?.secondSingleKSlSellEnabled ?? true} 
+                                  onChange={e => setLocalSettings({
+                                    ...localSettings, 
+                                    order: {
+                                      ...localSettings.order, 
+                                      secondSingleKSlSellEnabled: e
+                                    }
+                                  })} 
+                                />
+                              </div>
+                              <div className="flex bg-slate-200 p-0.5 rounded-lg">
+                                {(['ratio', 'fixed', 'amp'] as const).map(m => (
+                                  <button 
+                                    key={m} 
+                                    type="button"
+                                    onClick={() => setLocalSettings({
+                                      ...localSettings, 
+                                      order: {
+                                        ...localSettings.order, 
+                                        secondSingleKSlModeSell: m
+                                      }
+                                    })}
+                                    className={`px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-widest transition-all ${
+                                      (localSettings.order?.secondSingleKSlModeSell ?? 'fixed') === m 
+                                        ? 'bg-white text-rose-600 shadow-sm' 
+                                        : 'text-slate-500'
+                                    }`}
+                                  >
+                                    {m === 'ratio' ? '比例' : m === 'fixed' ? '固定' : '振比'}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            {(localSettings.order?.secondSingleKSlModeSell ?? 'fixed') === 'ratio' ? (
+                              <Input 
+                                label="空 比例 SLS2 (%)" 
+                                type="number" 
+                                value={String(localSettings.order?.secondSingleKSlRatioSell ?? 20)} 
+                                onChange={v => setLocalSettings({
+                                  ...localSettings, 
+                                  order: {
+                                    ...localSettings.order, 
+                                    secondSingleKSlRatioSell: Number(v)
+                                  }
+                                })} 
+                              />
+                            ) : (localSettings.order?.secondSingleKSlModeSell ?? 'fixed') === 'fixed' ? (
+                              <Input 
+                                label="空 固定值 (%)" 
+                                type="number" 
+                                value={String(localSettings.order?.secondSingleKSlFixedSell ?? 20)} 
+                                onChange={v => setLocalSettings({
+                                  ...localSettings, 
+                                  order: {
+                                    ...localSettings.order, 
+                                    secondSingleKSlFixedSell: Number(v)
+                                  }
+                                })} 
+                              />
+                            ) : (
+                              <Input 
+                                label="空 振比 (%)" 
+                                type="number" 
+                                value={String(localSettings.order?.secondSingleKSlAmpSell ?? 20)} 
+                                onChange={v => setLocalSettings({
+                                  ...localSettings, 
+                                  order: {
+                                    ...localSettings.order, 
+                                    secondSingleKSlAmpSell: Number(v)
+                                  }
+                                })} 
+                              />
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}

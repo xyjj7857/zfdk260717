@@ -3216,12 +3216,16 @@ export class StrategyEngine {
       // 关联M逻辑
       const isSingleK = coin.sourceMode === 'singleK';
       const mLinkEnabled = isSingleK
-        ? (this.settings.order.singleKMLinkEnabled ?? false)
+        ? (isSecondOrder 
+          ? (this.settings.order.secondSingleKMLinkEnabled ?? this.settings.order.singleKMLinkEnabled ?? false)
+          : (this.settings.order.singleKMLinkEnabled ?? false))
         : (isSecondOrder 
           ? (this.settings.order.secondMLinkEnabled ?? this.settings.order.mLinkEnabled)
           : this.settings.order.mLinkEnabled);
       const mLinkValue = isSingleK
-        ? (this.settings.order.singleKMLinkValue ?? 1800)
+        ? (isSecondOrder
+          ? (this.settings.order.secondSingleKMLinkValue ?? this.settings.order.singleKMLinkValue ?? 1800)
+          : (this.settings.order.singleKMLinkValue ?? 1800))
         : (isSecondOrder
           ? (this.settings.order.secondMLinkValue ?? this.settings.order.mLinkValue)
           : this.settings.order.mLinkValue);
@@ -3460,18 +3464,32 @@ export class StrategyEngine {
       const tpMultiplier = side === 'BUY' ? 1 : -1;
       
       const tpMode = isSingleK
-        ? (side === 'BUY' ? (this.settings.order.singleKTpModeBuy ?? 'amp') : (this.settings.order.singleKTpModeSell ?? 'amp'))
+        ? (isSecondOrder
+          ? (side === 'BUY' ? (this.settings.order.secondSingleKTpModeBuy ?? this.settings.order.singleKTpModeBuy ?? 'amp') : (this.settings.order.secondSingleKTpModeSell ?? this.settings.order.singleKTpModeSell ?? 'amp'))
+          : (side === 'BUY' ? (this.settings.order.singleKTpModeBuy ?? 'amp') : (this.settings.order.singleKTpModeSell ?? 'amp')))
         : (isSecondOrder
           ? (side === 'BUY' ? (this.settings.order.secondTpModeBuy ?? this.settings.order.tpModeBuy) : (this.settings.order.secondTpModeSell ?? this.settings.order.tpModeSell))
           : (side === 'BUY' ? this.settings.order.tpModeBuy : this.settings.order.tpModeSell));
 
       if (tpMode === 'fixed') {
-        const defaultTpFixed = isSingleK
-          ? (side === 'BUY' ? (this.settings.order.singleKTpFixedBuy ?? 2) : (this.settings.order.singleKTpFixedSell ?? 2))
-          : (side === 'BUY' ? this.settings.order.tpFixedBuy : this.settings.order.tpFixedSell);
-        const tpFixed = isSecondOrder && !isSingleK
-          ? ((side === 'BUY' ? this.settings.order.secondTpFixedBuy : this.settings.order.secondTpFixedSell) ?? defaultTpFixed)
-          : defaultTpFixed;
+        let tpFixed: number;
+        if (isSingleK) {
+          if (isSecondOrder) {
+            tpFixed = (side === 'BUY' 
+              ? (this.settings.order.secondSingleKTpFixedBuy ?? this.settings.order.singleKTpFixedBuy ?? 2)
+              : (this.settings.order.secondSingleKTpFixedSell ?? this.settings.order.singleKTpFixedSell ?? 2));
+          } else {
+            tpFixed = (side === 'BUY' ? (this.settings.order.singleKTpFixedBuy ?? 2) : (this.settings.order.singleKTpFixedSell ?? 2));
+          }
+        } else {
+          if (isSecondOrder) {
+            tpFixed = (side === 'BUY' 
+              ? (this.settings.order.secondTpFixedBuy ?? this.settings.order.tpFixedBuy) 
+              : (this.settings.order.secondTpFixedSell ?? this.settings.order.tpFixedSell));
+          } else {
+            tpFixed = (side === 'BUY' ? this.settings.order.tpFixedBuy : this.settings.order.tpFixedSell);
+          }
+        }
         theoreticalTP = kBestClose * (1 + tpMultiplier * tpFixed / 100);
         if (isSingleK) {
           this.addLog('下单', `${symbol} 单K模式止盈计算应用独立固定止盈: ${tpFixed}%`, 'info');
@@ -3483,13 +3501,24 @@ export class StrategyEngine {
         const amp = amplitudeMode === 'highLow' && kBestLow > 0
           ? (kBestHigh / kBestLow - 1)
           : (kBestHigh > 0 ? (1 - kBestLow / kBestHigh) : 0);
-        const defaultTpAmp = isSingleK
-          ? (side === 'BUY' ? (this.settings.order.singleKTpAmpBuy ?? 25) : (this.settings.order.singleKTpAmpSell ?? 25))
-          : (side === 'BUY' ? this.settings.order.tpAmpBuy : this.settings.order.tpAmpSell);
-        const tpAmp = isSecondOrder && !isSingleK
-          ? ((side === 'BUY' ? this.settings.order.secondTpAmpBuy : this.settings.order.secondTpAmpSell) ?? defaultTpAmp)
-          : defaultTpAmp;
-        const tpAmpVal = tpAmp ?? 25;
+        let tpAmpVal: number;
+        if (isSingleK) {
+          if (isSecondOrder) {
+            tpAmpVal = (side === 'BUY' 
+              ? (this.settings.order.secondSingleKTpAmpBuy ?? this.settings.order.singleKTpAmpBuy ?? 25)
+              : (this.settings.order.secondSingleKTpAmpSell ?? this.settings.order.singleKTpAmpSell ?? 25));
+          } else {
+            tpAmpVal = (side === 'BUY' ? (this.settings.order.singleKTpAmpBuy ?? 25) : (this.settings.order.singleKTpAmpSell ?? 25));
+          }
+        } else {
+          if (isSecondOrder) {
+            tpAmpVal = (side === 'BUY' 
+              ? (this.settings.order.secondTpAmpBuy ?? this.settings.order.tpAmpBuy) 
+              : (this.settings.order.secondTpAmpSell ?? this.settings.order.tpAmpSell));
+          } else {
+            tpAmpVal = (side === 'BUY' ? this.settings.order.tpAmpBuy : this.settings.order.tpAmpSell);
+          }
+        }
         theoreticalTP = kBestClose * (1 + tpMultiplier * amp * tpAmpVal / 100);
         if (isSingleK) {
           this.addLog('下单', `${symbol} 单K模式止盈计算应用独立振比止盈: ${tpAmpVal}%`, 'info');
@@ -3497,12 +3526,24 @@ export class StrategyEngine {
           this.addLog('下单', `${symbol} 第二仓单止盈计算应用独立振比止盈: ${tpAmpVal}%`, 'info');
         }
       } else {
-        const defaultTpRatio = isSingleK
-          ? (side === 'BUY' ? (this.settings.order.singleKTpRatioBuy ?? 25) : (this.settings.order.singleKTpRatioSell ?? 25))
-          : (side === 'BUY' ? this.settings.order.tpRatioBuy : this.settings.order.tpRatioSell);
-        const tpRatioVal = isSecondOrder && !isSingleK
-          ? ((side === 'BUY' ? this.settings.order.secondTpRatioBuy : this.settings.order.secondTpRatioSell) ?? defaultTpRatio)
-          : defaultTpRatio;
+        let tpRatioVal: number;
+        if (isSingleK) {
+          if (isSecondOrder) {
+            tpRatioVal = (side === 'BUY' 
+              ? (this.settings.order.secondSingleKTpRatioBuy ?? this.settings.order.singleKTpRatioBuy ?? 25)
+              : (this.settings.order.secondSingleKTpRatioSell ?? this.settings.order.singleKTpRatioSell ?? 25));
+          } else {
+            tpRatioVal = (side === 'BUY' ? (this.settings.order.singleKTpRatioBuy ?? 25) : (this.settings.order.singleKTpRatioSell ?? 25));
+          }
+        } else {
+          if (isSecondOrder) {
+            tpRatioVal = (side === 'BUY' 
+              ? (this.settings.order.secondTpRatioBuy ?? this.settings.order.tpRatioBuy) 
+              : (this.settings.order.secondTpRatioSell ?? this.settings.order.tpRatioSell));
+          } else {
+            tpRatioVal = (side === 'BUY' ? this.settings.order.tpRatioBuy : this.settings.order.tpRatioSell);
+          }
+        }
         const tpRatio = tpRatioVal / 100;
         // 采用绝对值并根据方向乘以系数，确保 TP 的方向永远正确
         theoreticalTP = kBestClose * (1 + tpMultiplier * Math.abs(kBestChange) * tpRatio);
@@ -3518,18 +3559,32 @@ export class StrategyEngine {
       const slMultiplier = side === 'BUY' ? -1 : 1;
       
       const slMode = isSingleK
-        ? (side === 'BUY' ? (this.settings.order.singleKSlModeBuy ?? 'fixed') : (this.settings.order.singleKSlModeSell ?? 'fixed'))
+        ? (isSecondOrder
+          ? (side === 'BUY' ? (this.settings.order.secondSingleKSlModeBuy ?? this.settings.order.singleKSlModeBuy ?? 'fixed') : (this.settings.order.secondSingleKSlModeSell ?? this.settings.order.singleKSlModeSell ?? 'fixed'))
+          : (side === 'BUY' ? (this.settings.order.singleKSlModeBuy ?? 'fixed') : (this.settings.order.singleKSlModeSell ?? 'fixed')))
         : (isSecondOrder
           ? (side === 'BUY' ? (this.settings.order.secondSlModeBuy ?? this.settings.order.slModeBuy) : (this.settings.order.secondSlModeSell ?? this.settings.order.slModeSell))
           : (side === 'BUY' ? this.settings.order.slModeBuy : this.settings.order.slModeSell));
 
       if (slMode === 'fixed') {
-        const defaultSlFixed = isSingleK
-          ? (side === 'BUY' ? (this.settings.order.singleKSlFixedBuy ?? 20) : (this.settings.order.singleKSlFixedSell ?? 20))
-          : (side === 'BUY' ? this.settings.order.slFixedBuy : this.settings.order.slFixedSell);
-        const slFixed = isSecondOrder && !isSingleK
-          ? ((side === 'BUY' ? this.settings.order.secondSlFixedBuy : this.settings.order.secondSlFixedSell) ?? defaultSlFixed)
-          : defaultSlFixed;
+        let slFixed: number;
+        if (isSingleK) {
+          if (isSecondOrder) {
+            slFixed = (side === 'BUY' 
+              ? (this.settings.order.secondSingleKSlFixedBuy ?? this.settings.order.singleKSlFixedBuy ?? 20)
+              : (this.settings.order.secondSingleKSlFixedSell ?? this.settings.order.singleKSlFixedSell ?? 20));
+          } else {
+            slFixed = (side === 'BUY' ? (this.settings.order.singleKSlFixedBuy ?? 20) : (this.settings.order.singleKSlFixedSell ?? 20));
+          }
+        } else {
+          if (isSecondOrder) {
+            slFixed = (side === 'BUY' 
+              ? (this.settings.order.secondSlFixedBuy ?? this.settings.order.slFixedBuy) 
+              : (this.settings.order.secondSlFixedSell ?? this.settings.order.slFixedSell));
+          } else {
+            slFixed = (side === 'BUY' ? this.settings.order.slFixedBuy : this.settings.order.slFixedSell);
+          }
+        }
         theoreticalSL = kBestClose * (1 + slMultiplier * slFixed / 100);
         if (isSingleK) {
           this.addLog('下单', `${symbol} 单K模式止损计算应用独立固定止损: ${slFixed}%`, 'info');
@@ -3541,13 +3596,24 @@ export class StrategyEngine {
         const amp = amplitudeMode === 'highLow' && kBestLow > 0
           ? (kBestHigh / kBestLow - 1)
           : (kBestHigh > 0 ? (1 - kBestLow / kBestHigh) : 0);
-        const defaultSlAmp = isSingleK
-          ? (side === 'BUY' ? (this.settings.order.singleKSlAmpBuy ?? 20) : (this.settings.order.singleKSlAmpSell ?? 20))
-          : (side === 'BUY' ? this.settings.order.slAmpBuy : this.settings.order.slAmpSell);
-        const slAmp = isSecondOrder && !isSingleK
-          ? ((side === 'BUY' ? this.settings.order.secondSlAmpBuy : this.settings.order.secondSlAmpSell) ?? defaultSlAmp)
-          : defaultSlAmp;
-        const slAmpVal = slAmp ?? 55;
+        let slAmpVal: number;
+        if (isSingleK) {
+          if (isSecondOrder) {
+            slAmpVal = (side === 'BUY' 
+              ? (this.settings.order.secondSingleKSlAmpBuy ?? this.settings.order.singleKSlAmpBuy ?? 20)
+              : (this.settings.order.secondSingleKSlAmpSell ?? this.settings.order.singleKSlAmpSell ?? 20));
+          } else {
+            slAmpVal = (side === 'BUY' ? (this.settings.order.singleKSlAmpBuy ?? 20) : (this.settings.order.singleKSlAmpSell ?? 20));
+          }
+        } else {
+          if (isSecondOrder) {
+            slAmpVal = (side === 'BUY' 
+              ? (this.settings.order.secondSlAmpBuy ?? this.settings.order.slAmpBuy) 
+              : (this.settings.order.secondSlAmpSell ?? this.settings.order.slAmpSell));
+          } else {
+            slAmpVal = (side === 'BUY' ? this.settings.order.slAmpBuy : this.settings.order.slAmpSell);
+          }
+        }
         theoreticalSL = kBestClose * (1 + slMultiplier * amp * slAmpVal / 100);
         if (isSingleK) {
           this.addLog('下单', `${symbol} 单K模式止损计算应用独立振比止损: ${slAmpVal}%`, 'info');
@@ -3555,12 +3621,24 @@ export class StrategyEngine {
           this.addLog('下单', `${symbol} 第二仓单止损计算应用独立振比止损: ${slAmpVal}%`, 'info');
         }
       } else {
-        const defaultSlRatio = isSingleK
-          ? (side === 'BUY' ? (this.settings.order.singleKSlRatioBuy ?? 20) : (this.settings.order.singleKSlRatioSell ?? 20))
-          : (side === 'BUY' ? this.settings.order.slRatioBuy : this.settings.order.slRatioSell);
-        const slRatioVal = isSecondOrder && !isSingleK
-          ? ((side === 'BUY' ? this.settings.order.secondSlRatioBuy : this.settings.order.secondSlRatioSell) ?? defaultSlRatio)
-          : defaultSlRatio;
+        let slRatioVal: number;
+        if (isSingleK) {
+          if (isSecondOrder) {
+            slRatioVal = (side === 'BUY' 
+              ? (this.settings.order.secondSingleKSlRatioBuy ?? this.settings.order.singleKSlRatioBuy ?? 20)
+              : (this.settings.order.secondSingleKSlRatioSell ?? this.settings.order.singleKSlRatioSell ?? 20));
+          } else {
+            slRatioVal = (side === 'BUY' ? (this.settings.order.singleKSlRatioBuy ?? 20) : (this.settings.order.singleKSlRatioSell ?? 20));
+          }
+        } else {
+          if (isSecondOrder) {
+            slRatioVal = (side === 'BUY' 
+              ? (this.settings.order.secondSlRatioBuy ?? this.settings.order.slRatioBuy) 
+              : (this.settings.order.secondSlRatioSell ?? this.settings.order.slRatioSell));
+          } else {
+            slRatioVal = (side === 'BUY' ? this.settings.order.slRatioBuy : this.settings.order.slRatioSell);
+          }
+        }
         const slRatio = slRatioVal / 100;
         theoreticalSL = kBestClose * (1 + slMultiplier * Math.abs(kBestChange) * slRatio);
         if (isSingleK) {
@@ -3633,25 +3711,37 @@ export class StrategyEngine {
       this.addLog('下单', `检测到持仓: ${symbol}, 数量: ${actualQuantity}, 准备挂单...`, 'info');
 
       const tpEnabled = isSingleK
-        ? (this.settings.order.singleKTpEnabled ?? true)
+        ? (isSecondOrder
+          ? (this.settings.order.secondSingleKTpEnabled ?? this.settings.order.singleKTpEnabled ?? true)
+          : (this.settings.order.singleKTpEnabled ?? true))
         : (isSecondOrder
           ? (this.settings.order.secondTpEnabled ?? true)
           : (this.settings.order.tpEnabled ?? true));
 
       const sideTpEnabled = isSingleK
-        ? (side === 'BUY' ? (this.settings.order.singleKTpBuyEnabled ?? true) : (this.settings.order.singleKTpSellEnabled ?? true))
+        ? (isSecondOrder
+          ? (side === 'BUY' 
+            ? (this.settings.order.secondSingleKTpBuyEnabled ?? this.settings.order.singleKTpBuyEnabled ?? true)
+            : (this.settings.order.secondSingleKTpSellEnabled ?? this.settings.order.singleKTpSellEnabled ?? true))
+          : (side === 'BUY' ? (this.settings.order.singleKTpBuyEnabled ?? true) : (this.settings.order.singleKTpSellEnabled ?? true)))
         : (isSecondOrder
           ? (side === 'BUY' ? (this.settings.order.secondTpBuyEnabled ?? true) : (this.settings.order.secondTpSellEnabled ?? true))
           : (side === 'BUY' ? (this.settings.order.tpBuyEnabled ?? true) : (this.settings.order.tpSellEnabled ?? true)));
 
       const slEnabled = isSingleK
-        ? (this.settings.order.singleKSlEnabled ?? true)
+        ? (isSecondOrder
+          ? (this.settings.order.secondSingleKSlEnabled ?? this.settings.order.singleKSlEnabled ?? true)
+          : (this.settings.order.singleKSlEnabled ?? true))
         : (isSecondOrder
           ? (this.settings.order.secondSlEnabled ?? true)
           : (this.settings.order.slEnabled ?? true));
 
       const sideSlEnabled = isSingleK
-        ? (side === 'BUY' ? (this.settings.order.singleKSlBuyEnabled ?? true) : (this.settings.order.singleKSlSellEnabled ?? true))
+        ? (isSecondOrder
+          ? (side === 'BUY' 
+            ? (this.settings.order.secondSingleKSlBuyEnabled ?? this.settings.order.singleKSlBuyEnabled ?? true)
+            : (this.settings.order.secondSingleKSlSellEnabled ?? this.settings.order.singleKSlSellEnabled ?? true))
+          : (side === 'BUY' ? (this.settings.order.singleKSlBuyEnabled ?? true) : (this.settings.order.singleKSlSellEnabled ?? true)))
         : (isSecondOrder
           ? (side === 'BUY' ? (this.settings.order.secondSlBuyEnabled ?? true) : (this.settings.order.secondSlSellEnabled ?? true))
           : (side === 'BUY' ? (this.settings.order.slBuyEnabled ?? true) : (this.settings.order.slSellEnabled ?? true)));

@@ -169,6 +169,30 @@ export interface OrderSettings {
   secondSlFixedSell?: number;
   secondSlAmpBuy?: number;
   secondSlAmpSell?: number;
+  secondSingleKMLinkEnabled?: boolean;
+  secondSingleKMLinkValue?: number;
+  secondSingleKTpEnabled?: boolean;
+  secondSingleKTpModeBuy?: 'ratio' | 'fixed' | 'amp';
+  secondSingleKTpModeSell?: 'ratio' | 'fixed' | 'amp';
+  secondSingleKTpBuyEnabled?: boolean;
+  secondSingleKTpSellEnabled?: boolean;
+  secondSingleKTpRatioBuy?: number;
+  secondSingleKTpRatioSell?: number;
+  secondSingleKTpFixedBuy?: number;
+  secondSingleKTpFixedSell?: number;
+  secondSingleKTpAmpBuy?: number;
+  secondSingleKTpAmpSell?: number;
+  secondSingleKSlEnabled?: boolean;
+  secondSingleKSlModeBuy?: 'ratio' | 'fixed' | 'amp';
+  secondSingleKSlModeSell?: 'ratio' | 'fixed' | 'amp';
+  secondSingleKSlBuyEnabled?: boolean;
+  secondSingleKSlSellEnabled?: boolean;
+  secondSingleKSlRatioBuy?: number;
+  secondSingleKSlRatioSell?: number;
+  secondSingleKSlFixedBuy?: number;
+  secondSingleKSlFixedSell?: number;
+  secondSingleKSlAmpBuy?: number;
+  secondSingleKSlAmpSell?: number;
 }
 
 export interface EmailSettings {
