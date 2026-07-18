@@ -28,6 +28,23 @@ export default function Logs({ logs, onClear, accountId }: { logs: LogEntry[], o
     return `${MM}-${dd} ${h}:${m}:${s}.${ms}`;
   };
 
+  const parseGmt8Time = (timeStr: string, isEnd: boolean = false): number => {
+    if (!timeStr) return NaN;
+    // Match YYYY-MM-DDTHH:mm:ss or YYYY-MM-DDTHH:mm or YYYY-MM-DD
+    const match = timeStr.match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2}))?)?/);
+    if (!match) return NaN;
+    
+    const year = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10) - 1;
+    const day = parseInt(match[3], 10);
+    const hour = match[4] ? parseInt(match[4], 10) : (isEnd ? 23 : 0);
+    const minute = match[5] ? parseInt(match[5], 10) : (isEnd ? 59 : 0);
+    const second = match[6] ? parseInt(match[6], 10) : (isEnd ? 59 : 0);
+    
+    const utcMs = Date.UTC(year, month, day, hour, minute, second);
+    return utcMs - 8 * 3600 * 1000;
+  };
+
   const handleSearch = async () => {
     setIsSearching(true);
     try {
@@ -37,13 +54,13 @@ export default function Logs({ logs, onClear, accountId }: { logs: LogEntry[], o
       if (moduleFilter) url.searchParams.append('module', moduleFilter);
       if (typeFilter) url.searchParams.append('type', typeFilter);
       if (startDate) {
-        const startTs = new Date(`${startDate}T00:00:00`).getTime();
+        const startTs = parseGmt8Time(startDate, false);
         if (!isNaN(startTs)) {
           url.searchParams.append('startTime', startTs.toString());
         }
       }
       if (endDate) {
-        const endTs = new Date(`${endDate}T23:59:59`).getTime();
+        const endTs = parseGmt8Time(endDate, true);
         if (!isNaN(endTs)) {
           url.searchParams.append('endTime', endTs.toString());
         }
@@ -134,19 +151,21 @@ export default function Logs({ logs, onClear, accountId }: { logs: LogEntry[], o
            </select>
         </div>
         <div>
-          <label className="block text-xs font-bold text-slate-700 mb-1 ml-1 uppercase tracking-wider">开始日期</label>
+          <label className="block text-xs font-bold text-slate-700 mb-1 ml-1 uppercase tracking-wider">开始时间</label>
           <input
-            type="date"
-            className="w-40 px-4 py-2 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all bg-white text-slate-700"
+            type="datetime-local"
+            step="3600"
+            className="w-52 px-4 py-2 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all bg-white text-slate-700"
             value={startDate}
             onChange={e => setStartDate(e.target.value)}
           />
         </div>
         <div>
-          <label className="block text-xs font-bold text-slate-700 mb-1 ml-1 uppercase tracking-wider">结束日期</label>
+          <label className="block text-xs font-bold text-slate-700 mb-1 ml-1 uppercase tracking-wider">结束时间</label>
           <input
-            type="date"
-            className="w-40 px-4 py-2 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all bg-white text-slate-700"
+            type="datetime-local"
+            step="3600"
+            className="w-52 px-4 py-2 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all bg-white text-slate-700"
             value={endDate}
             onChange={e => setEndDate(e.target.value)}
           />

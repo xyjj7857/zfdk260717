@@ -29,6 +29,285 @@ interface TransferLog {
   message?: string;
 }
 
+function CandlestickChart({ 
+  data, 
+  transfers = [], 
+  width = 800, 
+  height = 400 
+}: { 
+  data: any[], 
+  transfers?: any[], 
+  width?: number, 
+  height?: number 
+}) {
+  const [hoveredIdx, setHoveredIdx] = React.useState<number | null>(null);
+  const [tooltipPos, setTooltipPos] = React.useState({ x: 0, y: 0 });
+
+  const paddingLeft = 70;
+  const paddingRight = 30;
+  const paddingTop = 30;
+  const paddingBottom = 40;
+
+  const chartWidth = width - paddingLeft - paddingRight;
+  const chartHeight = height - paddingTop - paddingBottom;
+
+  if (data.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center text-slate-400">
+        暂无K线数据
+      </div>
+    );
+  }
+
+  // Get min and max across all candles
+  const highs = data.map(d => d.high);
+  const lows = data.map(d => d.low);
+  const absMax = Math.max(...highs);
+  const absMin = Math.min(...lows);
+  const range = absMax - absMin;
+  const padding = range * 0.1 || 10;
+  
+  const yMin = Math.max(0, absMin - padding);
+  const yMax = absMax + padding;
+
+  const mapY = (val: number) => {
+    return paddingTop + chartHeight - ((val - yMin) / (yMax - yMin)) * chartHeight;
+  };
+
+  const cellWidth = chartWidth / data.length;
+  const bodyWidth = Math.min(Math.max(cellWidth * 0.5, 6), 36);
+
+  // Generate 4 evenly spaced ticks
+  const yTicks = [
+    yMin,
+    yMin + (yMax - yMin) * 0.333,
+    yMin + (yMax - yMin) * 0.666,
+    yMax
+  ];
+
+  const formatXLabel = (timeStr: string) => {
+    const match = timeStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (match) return `${match[2]}/${match[3]}`;
+    const weekMatch = timeStr.match(/W(\d+)\s*\(周一\s*(\d{2}-\d{2})\)/);
+    if (weekMatch) return `W${weekMatch[1]} (${weekMatch[2]})`;
+    return timeStr;
+  };
+
+  return (
+    <div className="relative w-full h-full select-none" style={{ width, height }}>
+      <svg width={width} height={height} className="overflow-visible">
+        {/* Horizontal grid lines */}
+        {yTicks.map((tick, i) => {
+          const y = mapY(tick);
+          return (
+            <g key={i}>
+              <line 
+                x1={paddingLeft} 
+                y1={y} 
+                x2={width - paddingRight} 
+                y2={y} 
+                stroke="#f8fafc" 
+                strokeWidth={1}
+                strokeDasharray="3 3"
+              />
+              <text 
+                x={paddingLeft - 10} 
+                y={y + 4} 
+                textAnchor="end" 
+                className="fill-slate-400 font-mono text-[10px] font-semibold"
+              >
+                ${tick.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* X Axis line */}
+        <line 
+          x1={paddingLeft} 
+          y1={height - paddingBottom} 
+          x2={width - paddingRight} 
+          y2={height - paddingBottom} 
+          stroke="#f1f5f9" 
+          strokeWidth={1}
+        />
+
+        {/* Candles and vertical bars */}
+        {data.map((d, i) => {
+          const cx = paddingLeft + i * cellWidth + cellWidth / 2;
+          const yHigh = mapY(d.high);
+          const yLow = mapY(d.low);
+          const yOpen = mapY(d.open);
+          const yClose = mapY(d.close);
+          const isUp = d.close >= d.open;
+          const color = isUp ? '#10b981' : '#ef4444';
+          const isHovered = hoveredIdx === i;
+
+          return (
+            <g 
+              key={d.time}
+              onMouseEnter={(e) => {
+                setHoveredIdx(i);
+                setTooltipPos({ x: cx, y: Math.min(yOpen, yClose) });
+              }}
+              onMouseLeave={() => setHoveredIdx(null)}
+              className="cursor-pointer"
+            >
+              {/* Highlight bar on hover */}
+              {isHovered && (
+                <rect 
+                  x={paddingLeft + i * cellWidth}
+                  y={paddingTop}
+                  width={cellWidth}
+                  height={chartHeight}
+                  fill="#f1f5f9"
+                  opacity={0.5}
+                />
+              )}
+
+              {/* Wick */}
+              <line 
+                x1={cx} 
+                y1={yHigh} 
+                x2={cx} 
+                y2={yLow} 
+                stroke={color} 
+                strokeWidth={1.5} 
+              />
+
+              {/* Candle Body */}
+              <rect 
+                x={cx - bodyWidth / 2} 
+                y={Math.min(yOpen, yClose)} 
+                width={bodyWidth} 
+                height={Math.max(Math.abs(yOpen - yClose), 2)} 
+                fill={color} 
+                rx={2}
+                className="transition-all duration-150"
+                style={{
+                  filter: isHovered ? `drop-shadow(0 0 6px ${color}50)` : 'none'
+                }}
+              />
+
+              {/* X Axis Label */}
+              <text 
+                x={cx} 
+                y={height - paddingBottom + 20} 
+                textAnchor="middle" 
+                className="fill-slate-500 font-sans text-[10px] font-bold"
+              >
+                {formatXLabel(d.time)}
+              </text>
+            </g>
+          );
+        })}
+
+        {/* Transfer Reference Lines */}
+        {transfers.map((t) => {
+          if (!t.timestamp) return null;
+          
+          let targetIndex = -1;
+          for (let i = 0; i < data.length; i++) {
+            const logs = data[i].logs || [];
+            if (logs.length === 0) continue;
+            const start = logs[0].timestamp;
+            const end = logs[logs.length - 1].timestamp;
+            
+            if (t.timestamp >= start && t.timestamp <= end) {
+              targetIndex = i;
+              break;
+            }
+          }
+          
+          if (targetIndex === -1) {
+            let minDiff = Infinity;
+            data.forEach((d, idx) => {
+              const logs = d.logs || [];
+              if (logs.length > 0) {
+                const mid = (logs[0].timestamp + logs[logs.length - 1].timestamp) / 2;
+                const diff = Math.abs(t.timestamp - mid);
+                if (diff < minDiff) {
+                  minDiff = diff;
+                  targetIndex = idx;
+                }
+              }
+            });
+          }
+
+          if (targetIndex === -1) return null;
+
+          const cx = paddingLeft + targetIndex * cellWidth + cellWidth / 2;
+          const strokeColor = t.type === 'IN' ? '#10b981' : '#ef4444';
+
+          return (
+            <g key={t.id}>
+              <line 
+                x1={cx} 
+                y1={paddingTop} 
+                x2={cx} 
+                y2={height - paddingBottom} 
+                stroke={strokeColor} 
+                strokeDasharray="3 3" 
+                strokeWidth={1.5}
+              />
+              <circle 
+                cx={cx} 
+                cy={paddingTop + 10} 
+                r={4} 
+                fill={strokeColor} 
+              />
+            </g>
+          );
+        })}
+      </svg>
+
+      {/* Floating Tooltip */}
+      {hoveredIdx !== null && (
+        <div 
+          className="absolute z-50 bg-white border border-slate-100 p-4 rounded-2xl shadow-2xl ring-1 ring-black/5 pointer-events-none transition-all duration-75 text-xs font-semibold"
+          style={{
+            left: `${tooltipPos.x + 15}px`,
+            top: `${Math.min(tooltipPos.y, height - 180)}px`,
+            transform: tooltipPos.x + 15 + 200 > width ? 'translateX(-230px)' : 'none'
+          }}
+        >
+          <div className="border-b border-slate-100 pb-2 mb-2">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{data[hoveredIdx].time}</p>
+          </div>
+          <div className="space-y-1">
+            <div className="flex justify-between gap-8">
+              <span className="text-slate-500">开盘:</span>
+              <span className="font-mono text-slate-800">${data[hoveredIdx].open.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            </div>
+            <div className="flex justify-between gap-8">
+              <span className="text-slate-500">收盘:</span>
+              <span className="font-mono text-slate-800 font-bold">${data[hoveredIdx].close.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            </div>
+            <div className="flex justify-between gap-8">
+              <span className="text-slate-500">最高:</span>
+              <span className="font-mono text-emerald-600">${data[hoveredIdx].high.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            </div>
+            <div className="flex justify-between gap-8">
+              <span className="text-slate-500">最低:</span>
+              <span className="font-mono text-red-500">${data[hoveredIdx].low.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            </div>
+            <div className="flex justify-between gap-8 border-t border-slate-50 pt-1 mt-1">
+              <span className="text-slate-500">振幅:</span>
+              <span className="font-mono text-amber-600 font-bold">{data[hoveredIdx].amplitude.toFixed(2)}%</span>
+            </div>
+            <div className="flex justify-between gap-8">
+              <span className="text-slate-500">涨跌:</span>
+              <span className={`font-mono font-bold ${data[hoveredIdx].close >= data[hoveredIdx].open ? 'text-emerald-500' : 'text-red-500'}`}>
+                {data[hoveredIdx].close >= data[hoveredIdx].open ? '+' : ''}{data[hoveredIdx].change.toFixed(2)}%
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function BalanceHistory({ 
   balanceLogs = [], 
   transferLogs = [],
@@ -55,6 +334,7 @@ export default function BalanceHistory({
   // Tabs structure: 'trend' (Continuous trend list) vs 'periods' (Candlestick Analysis)
   const [activeTab, setActiveTab] = useState<'trend' | 'periods'>('trend');
   const [periodType, setPeriodType] = useState<'day' | 'week' | 'month'>('day');
+  const [periodViewMode, setPeriodViewMode] = useState<'chart' | 'table'>('chart');
 
   const totalBalance = account?.totalBalance || '0.00';
   const spotBalance = account?.spotBalance || '0.00';
@@ -392,34 +672,56 @@ export default function BalanceHistory({
         </div>
 
         {activeTab === 'periods' && (
-          <div className="flex items-center justify-between bg-slate-50 p-4 rounded-3xl mb-6">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-slate-600">展示周期尺度:</span>
-              <div className="bg-slate-200 p-0.5 rounded-xl flex gap-1">
-                <button 
-                  type="button" 
-                  onClick={() => setPeriodType('day')}
-                  className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${periodType === 'day' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
-                >
-                  按日 (Day)
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => setPeriodType('week')}
-                  className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${periodType === 'week' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
-                >
-                  按周 (Week)
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => setPeriodType('month')}
-                  className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${periodType === 'month' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
-                >
-                  按月 (Month)
-                </button>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-50 p-4 rounded-3xl gap-4 mb-6">
+            <div className="flex flex-wrap items-center gap-6">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-600">展示周期尺度:</span>
+                <div className="bg-slate-200 p-0.5 rounded-xl flex gap-1">
+                  <button 
+                    type="button" 
+                    onClick={() => setPeriodType('day')}
+                    className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${periodType === 'day' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+                  >
+                    按日 (Day)
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => setPeriodType('week')}
+                    className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${periodType === 'week' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+                  >
+                    按周 (Week)
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => setPeriodType('month')}
+                    className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${periodType === 'month' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+                  >
+                    按月 (Month)
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 sm:border-l sm:border-slate-200 sm:pl-6">
+                <span className="text-xs font-bold text-slate-600">展示视图模式:</span>
+                <div className="bg-slate-200 p-0.5 rounded-xl flex gap-1">
+                  <button 
+                    type="button" 
+                    onClick={() => setPeriodViewMode('chart')}
+                    className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${periodViewMode === 'chart' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500'}`}
+                  >
+                    图表视图
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={() => setPeriodViewMode('table')}
+                    className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${periodViewMode === 'table' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-500'}`}
+                  >
+                    表格视图
+                  </button>
+                </div>
               </div>
             </div>
-            <div className="text-[10px] text-slate-400 font-medium">
+            <div className="text-[10px] text-slate-400 font-medium sm:text-right">
               基于每日早上 08:18 起讫进行划分
             </div>
           </div>
@@ -512,82 +814,91 @@ export default function BalanceHistory({
             )}
           </div>
         ) : (
-          /* Candlestick / Period table analysis render */
+          /* Candlestick / Period analysis render */
           <div className="space-y-6 mt-4">
             {candlestickData.length > 0 ? (
-              <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-slate-50/80 border-b border-slate-100">
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">周期节点</th>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">烛线示意</th>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">开盘 (本期首)</th>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">收盘 (本期末)</th>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">最高 record</th>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">最低 record</th>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">周期振幅</th>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">周期涨跌</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 font-mono text-xs">
-                      {candlestickData.map((candle, idx) => {
-                        const isUp = candle.close >= candle.open;
-                        
-                        // Compute percentages for interactive candle rendering
-                        const rangeVal = candle.high - candle.low;
-                        const hasRange = rangeVal > 0;
-                        const wickTop = hasRange ? ((candle.high - Math.max(candle.open, candle.close)) / rangeVal) * 100 : 0;
-                        const bodyHeight = hasRange ? (Math.abs(candle.open - candle.close) / rangeVal) * 100 : 100;
-                        const bodyBottom = hasRange ? ((Math.min(candle.open, candle.close) - candle.low) / rangeVal) * 100 : 0;
-
-                        return (
-                          <tr key={candle.time} className="hover:bg-slate-50/50 transition-colors">
-                            <td className="px-6 py-4 font-sans font-bold text-slate-700">{candle.time}</td>
-                            
-                            {/* CSS-driven vector Spark-Candle preview column */}
-                            <td className="px-6 py-4">
-                              <div className="flex justify-center items-center h-10 w-16 mx-auto relative group" title={`H: ${candle.high}, L: ${candle.low}, O: ${candle.open}, C: ${candle.close}`}>
-                                {hasRange ? (
-                                  <>
-                                    {/* Wick Line */}
-                                    <div className="absolute w-[2px] bg-slate-300 h-full left-1/2 -translate-x-1/2" />
-                                    {/* Candle Body */}
-                                    <div 
-                                      className={`absolute w-3 rounded-sm ${isUp ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.3)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.3)]'}`}
-                                      style={{
-                                        top: `${wickTop}%`,
-                                        height: `${Math.max(bodyHeight, 6)}%`
-                                      }}
-                                    />
-                                  </>
-                                ) : (
-                                  <div className="w-3 h-1.5 rounded-sm bg-slate-400" />
-                                )}
-                              </div>
-                            </td>
-
-                            <td className="px-6 py-4 font-bold text-slate-600">${candle.open.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                            <td className="px-6 py-4 font-black text-slate-800">${candle.close.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                            <td className="px-6 py-4 text-emerald-600">${candle.high.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                            <td className="px-6 py-4 text-red-500">${candle.low.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                            <td className="px-6 py-4">
-                              <span className="px-2 py-1 bg-amber-50 text-amber-700 rounded-lg font-black text-[10px]">
-                                {candle.amplitude.toFixed(2)}%
-                              </span>
-                            </td>
-                            <td className="px-6 py-4">
-                              <span className={`px-2 py-1 rounded-lg font-black text-[10px] ${isUp ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-red-50 text-red-600 border border-red-100'}`}>
-                                {isUp ? '+' : ''}{candle.change.toFixed(2)}%
-                              </span>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+              periodViewMode === 'chart' ? (
+                /* Candlestick Chart Render */
+                <div className="h-[400px] w-full mt-4">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <CandlestickChart data={candlestickData} transfers={relevantTransfers} />
+                  </ResponsiveContainer>
                 </div>
-              </div>
+              ) : (
+                /* Candlestick / Period table view */
+                <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden shadow-sm">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50/80 border-b border-slate-100">
+                          <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">周期节点</th>
+                          <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">烛线示意</th>
+                          <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">开盘 (本期首)</th>
+                          <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">收盘 (本期末)</th>
+                          <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">最高 record</th>
+                          <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">最低 record</th>
+                          <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">周期振幅</th>
+                          <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest">周期涨跌</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-mono text-xs">
+                        {candlestickData.map((candle, idx) => {
+                          const isUp = candle.close >= candle.open;
+                          
+                          // Compute percentages for interactive candle rendering
+                          const rangeVal = candle.high - candle.low;
+                          const hasRange = rangeVal > 0;
+                          const wickTop = hasRange ? ((candle.high - Math.max(candle.open, candle.close)) / rangeVal) * 100 : 0;
+                          const bodyHeight = hasRange ? (Math.abs(candle.open - candle.close) / rangeVal) * 100 : 100;
+
+                          return (
+                            <tr key={candle.time} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="px-6 py-4 font-sans font-bold text-slate-700">{candle.time}</td>
+                              
+                              {/* CSS-driven vector Spark-Candle preview column */}
+                              <td className="px-6 py-4">
+                                <div className="flex justify-center items-center h-10 w-16 mx-auto relative group" title={`H: ${candle.high}, L: ${candle.low}, O: ${candle.open}, C: ${candle.close}`}>
+                                  {hasRange ? (
+                                    <>
+                                      {/* Wick Line */}
+                                      <div className="absolute w-[2px] bg-slate-300 h-full left-1/2 -translate-x-1/2" />
+                                      {/* Candle Body */}
+                                      <div 
+                                        className={`absolute w-3 rounded-sm ${isUp ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.3)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.3)]'}`}
+                                        style={{
+                                          top: `${wickTop}%`,
+                                          height: `${Math.max(bodyHeight, 6)}%`
+                                        }}
+                                      />
+                                    </>
+                                  ) : (
+                                    <div className="w-3 h-1.5 rounded-sm bg-slate-400" />
+                                  )}
+                                </div>
+                              </td>
+
+                              <td className="px-6 py-4 font-bold text-slate-600">${candle.open.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                              <td className="px-6 py-4 font-black text-slate-800">${candle.close.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                              <td className="px-6 py-4 text-emerald-600">${candle.high.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                              <td className="px-6 py-4 text-red-500">${candle.low.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                              <td className="px-6 py-4">
+                                <span className="px-2 py-1 bg-amber-50 text-amber-700 rounded-lg font-black text-[10px]">
+                                  {candle.amplitude.toFixed(2)}%
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className={`px-2 py-1 rounded-lg font-black text-[10px] ${isUp ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'bg-red-50 text-red-600 border border-red-100'}`}>
+                                  {isUp ? '+' : ''}{candle.change.toFixed(2)}%
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )
             ) : (
               <div className="bg-slate-50 rounded-3xl p-12 text-center text-slate-400 flex flex-col items-center justify-center border border-dashed border-slate-200">
                 <p className="text-xs font-bold uppercase tracking-widest mb-1">未加载数据</p>
