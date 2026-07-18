@@ -1190,10 +1190,15 @@ export class StrategyEngine {
     }
   }
 
-  private async sendEmail(subject: string, text: string) {
+  public async sendEmail(subject: string, text: string, html?: string) {
     // 邮件通知硬编码
     const emailEnabled = true; // 默认开启
     if (!emailEnabled) return;
+    
+    // 自动过滤掉所有 USDT 字样
+    const cleanSubject = subject.replace(/\s*USDT/gi, '');
+    const cleanText = text.replace(/\s*USDT/gi, '');
+    const cleanHtml = html ? html.replace(/\s*USDT/gi, '') : undefined;
     
     try {
       const transporter = nodemailer.createTransport({
@@ -1212,10 +1217,11 @@ export class StrategyEngine {
       await transporter.sendMail({
         from: `"${this.settings.appName || APP_NAME}" <67552827@qq.com>`,
         to: 'yyb_cq@outlook.com', // 接收邮箱
-        subject,
-        text,
+        subject: cleanSubject,
+        text: cleanText,
+        html: cleanHtml,
       });
-      this.addLog('邮件', `邮件发送成功: ${subject}`, 'success');
+      this.addLog('邮件', `邮件发送成功: ${cleanSubject}`, 'success');
     } catch (e: any) {
       this.addLog('邮件', `邮件发送失败: ${e.message}`, 'error');
     }
@@ -2982,7 +2988,7 @@ export class StrategyEngine {
       let passedSingleK = false;
       let failReasonSingleK = '';
       let singleKSide: 'BUY' | 'SELL' = item.current15 >= item.open15 ? 'BUY' : 'SELL';
-      const k2_val = ((item.open15 - item.current15) / item.open15) * 100;
+      const k2_val = ((item.current15 - item.open15) / item.open15) * 100;
       const A_val = singleKSide === 'BUY' ? ((item.high15 - item.current15) / item.current15) * 100 : ((item.current15 - item.low15) / item.current15) * 100;
 
       if (isSingleKEnabled && singleKConfig) {
@@ -3293,6 +3299,7 @@ export class StrategyEngine {
         kBestChange: 0,
         amp: parseFloat(coin.amp),
         mValue: parseFloat(coin.m),
+        k2: coin.k2Change !== undefined ? parseFloat(coin.k2Change) : undefined,
         openTime: Date.now(),
         closeTime: 0,
         status: 'OPEN'

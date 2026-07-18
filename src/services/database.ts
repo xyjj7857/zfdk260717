@@ -46,6 +46,7 @@ export class DatabaseService {
           amp REAL,
           mValue REAL,
           realA REAL,
+          k2 REAL DEFAULT 0,
           openTime INTEGER NOT NULL,
           closeTime INTEGER NOT NULL,
           status TEXT NOT NULL
@@ -161,6 +162,10 @@ export class DatabaseService {
         console.log('Migrating database: Adding realA column');
         this.db.exec(`ALTER TABLE trade_logs ADD COLUMN realA REAL DEFAULT 0`);
       }
+      if (!tradeLogColumns.includes('k2')) {
+        console.log('Migrating database: Adding k2 column');
+        this.db.exec(`ALTER TABLE trade_logs ADD COLUMN k2 REAL DEFAULT 0`);
+      }
       if (!tradeLogColumns.includes('fundingRate')) {
         console.log('Migrating database: Adding fundingRate column to trade_logs');
         this.db.exec(`ALTER TABLE trade_logs ADD COLUMN fundingRate REAL DEFAULT 0`);
@@ -208,14 +213,14 @@ export class DatabaseService {
     try {
       const stmt = this.db.prepare(`
         INSERT OR REPLACE INTO trade_logs (
-          id, accountId, symbol, side, leverage, amount, entryPrice, exitPrice, pnl, fee, fundingFee, fundingFeeCheckedCount, fundingRate, profitRate, kBestChange, amp, mValue, realA, openTime, closeTime, status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, accountId, symbol, side, leverage, amount, entryPrice, exitPrice, pnl, fee, fundingFee, fundingFeeCheckedCount, fundingRate, profitRate, kBestChange, amp, mValue, realA, k2, openTime, closeTime, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       stmt.run(
         log.id, accountId, log.symbol, log.side, log.leverage, log.amount, log.entryPrice, 
         log.exitPrice, log.pnl, log.fee, log.fundingFee, log.fundingFeeCheckedCount || 0, log.fundingRate || 0, log.profitRate, 
-        log.kBestChange || 0, log.amp || 0, log.mValue || 0, log.realA || 0,
+        log.kBestChange || 0, log.amp || 0, log.mValue || 0, log.realA || 0, log.k2 || 0,
         log.openTime, log.closeTime, log.status
       );
     } catch (error) {

@@ -918,6 +918,158 @@ async function startServer() {
     });
   }
 
+  // Daily Balance Report Sender Function
+  async function sendDailyBalanceReport() {
+    console.log('[Scheduler] Fetching latest account data for daily report...');
+    
+    const reportRows: string[] = [];
+    let totalSpotAll = 0;
+    let totalFuturesAll = 0;
+    
+    for (const [id, engine] of engines.entries()) {
+      try {
+        console.log(`[Scheduler] Fetching data for account: ${id}`);
+        await engine.fetchAccountData();
+        const accountData = engine.getAccountData();
+        
+        const spot = parseFloat(accountData.spotBalance || '0');
+        const futures = parseFloat(accountData.totalBalance || '0');
+        const total = spot + futures;
+        
+        totalSpotAll += spot;
+        totalFuturesAll += futures;
+        
+        const accountName = engine.getSettings().name || `账户 [${id}]`;
+        
+        reportRows.push(`
+          <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 12px; font-weight: 500; color: #1e293b;">${accountName}</td>
+            <td style="padding: 12px; font-family: monospace; color: #475569; text-align: right;">${spot.toFixed(2)}</td>
+            <td style="padding: 12px; font-family: monospace; color: #475569; text-align: right;">${futures.toFixed(2)}</td>
+            <td style="padding: 12px; font-family: monospace; font-weight: 600; color: #0f172a; text-align: right;">${total.toFixed(2)}</td>
+          </tr>
+        `);
+      } catch (err: any) {
+        console.error(`[Scheduler] Error fetching data for account ${id}:`, err.message);
+        const engineInstance = engines.get(id);
+        const accountName = engineInstance ? engineInstance.getSettings().name : `账户 [${id}]`;
+        reportRows.push(`
+          <tr style="border-bottom: 1px solid #e2e8f0;">
+            <td style="padding: 12px; font-weight: 500; color: #1e293b;">${accountName}</td>
+            <td colspan="3" style="padding: 12px; color: #ef4444; text-align: center;">获取数据失败: ${err.message}</td>
+          </tr>
+        `);
+      }
+    }
+    
+    const grandTotal = totalSpotAll + totalFuturesAll;
+    
+    const beijingTimeStr = new Intl.DateTimeFormat('zh-CN', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    }).format(new Date());
+    
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>每日账户资产报告</title>
+      </head>
+      <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; padding: 24px; margin: 0;">
+        <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.02); overflow: hidden; border: 1px solid #e2e8f0;">
+          <!-- Header -->
+          <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); padding: 24px; text-align: center;">
+            <h1 style="color: #ffffff; margin: 0; font-size: 20px; font-weight: 600; letter-spacing: 0.05em;">每日账户资产报告</h1>
+            <p style="color: #94a3b8; margin: 8px 0 0 0; font-size: 14px;">报告生成时间: ${beijingTimeStr} (北京时间)</p>
+          </div>
+          
+          <!-- Content Body -->
+          <div style="padding: 24px;">
+            <!-- Overall Stats Card -->
+            <div style="background-color: #f1f5f9; border-radius: 8px; padding: 16px; margin-bottom: 24px; display: flex; justify-content: space-around; border: 1px solid #e2e8f0;">
+              <div style="text-align: center; width: 33.33%;">
+                <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: #64748b; letter-spacing: 0.05em; margin-bottom: 4px;">总现货资产</div>
+                <div style="font-family: monospace; font-size: 15px; font-weight: 700; color: #334155;">${totalSpotAll.toFixed(2)}</div>
+              </div>
+              <div style="text-align: center; width: 33.33%; border-left: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;">
+                <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: #64748b; letter-spacing: 0.05em; margin-bottom: 4px;">总合约资产</div>
+                <div style="font-family: monospace; font-size: 15px; font-weight: 700; color: #334155;">${totalFuturesAll.toFixed(2)}</div>
+              </div>
+              <div style="text-align: center; width: 33.33%;">
+                <div style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: #64748b; letter-spacing: 0.05em; margin-bottom: 4px;">合并总资产</div>
+                <div style="font-family: monospace; font-size: 15px; font-weight: 700; color: #0f172a;">${grandTotal.toFixed(2)}</div>
+              </div>
+            </div>
+            
+            <!-- Detailed Table -->
+            <h2 style="font-size: 15px; font-weight: 600; color: #334155; margin: 0 0 12px 0;">账户明细列表</h2>
+            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+              <thead>
+                <tr style="background-color: #f8fafc; border-bottom: 2px solid #e2e8f0;">
+                  <th style="padding: 10px 12px; font-weight: 600; color: #475569;">账户名称</th>
+                  <th style="padding: 10px 12px; font-weight: 600; color: #475569; text-align: right;">现货余额</th>
+                  <th style="padding: 10px 12px; font-weight: 600; color: #475569; text-align: right;">合约余额</th>
+                  <th style="padding: 10px 12px; font-weight: 600; color: #475569; text-align: right;">合并资产</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${reportRows.join('')}
+                <tr style="background-color: #f8fafc; font-weight: 600; border-top: 2px solid #cbd5e1;">
+                  <td style="padding: 12px; color: #0f172a;">总计</td>
+                  <td style="padding: 12px; font-family: monospace; color: #0f172a; text-align: right;">${totalSpotAll.toFixed(2)}</td>
+                  <td style="padding: 12px; font-family: monospace; color: #0f172a; text-align: right;">${totalFuturesAll.toFixed(2)}</td>
+                  <td style="padding: 12px; font-family: monospace; color: #0f172a; text-align: right; font-size: 14px;">${grandTotal.toFixed(2)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          
+          <!-- Footer -->
+          <div style="background-color: #f8fafc; padding: 16px; text-align: center; border-top: 1px solid #e2e8f0; font-size: 11px; color: #94a3b8;">
+            此邮件由系统自动发送，请勿直接回复。<br>
+            © ${new Date().getFullYear()} 量化策略管理系统. All rights reserved.
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+    
+    let senderEngine = engines.get(primaryAccountId || "");
+    if (!senderEngine && engines.size > 0) {
+      senderEngine = engines.values().next().value;
+    }
+    
+    if (senderEngine) {
+      const textContent = `每日账户资产报告\n\n` + 
+        `报告生成时间: ${beijingTimeStr} (北京时间)\n` +
+        `合并总资产: ${grandTotal.toFixed(2)}\n` +
+        `总现货资产: ${totalSpotAll.toFixed(2)}\n` +
+        `总合约资产: ${totalFuturesAll.toFixed(2)}\n`;
+        
+      await senderEngine.sendEmail(`[每日资产报告] ${beijingTimeStr.split(' ')[0]}`, textContent, htmlContent);
+      console.log(`[Scheduler] Daily balance report email sent successfully at ${beijingTimeStr}`);
+    } else {
+      console.error('[Scheduler] No engine found to send daily report email.');
+    }
+  }
+
+  // API to manually trigger the daily report for testing
+  app.post("/api/test-daily-report", async (req, res) => {
+    try {
+      await sendDailyBalanceReport();
+      res.json({ success: true, message: "每日资产报告已成功手动触发发送！请检查收件箱。" });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
     
@@ -926,6 +1078,45 @@ async function startServer() {
     for (const [id, engine] of engines.entries()) {
       engine.start().catch(err => console.error(`Account [${id}] failed to start:`, err));
     }
+
+    // Start Daily Balance Report Scheduler at 8:20 AM Beijing Time (UTC+8)
+    let lastSentReportDate = "";
+    setInterval(async () => {
+      try {
+        const now = new Date();
+        const formatter = new Intl.DateTimeFormat('zh-CN', {
+          timeZone: 'Asia/Shanghai',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        });
+        const parts = formatter.formatToParts(now);
+        const year = parts.find(p => p.type === 'year')?.value || '';
+        const month = parts.find(p => p.type === 'month')?.value || '';
+        const day = parts.find(p => p.type === 'day')?.value || '';
+        const hour = parts.find(p => p.type === 'hour')?.value || '';
+        const minute = parts.find(p => p.type === 'minute')?.value || '';
+        
+        const dateKey = `${year}-${month}-${day}`;
+        const hourNum = parseInt(hour, 10);
+        const minuteNum = parseInt(minute, 10);
+        
+        // Target time is 8:20 AM Beijing Time
+        const isTargetTime = (hourNum === 8 && minuteNum >= 20) || (hourNum > 8);
+        
+        if (isTargetTime && lastSentReportDate !== dateKey) {
+          console.log(`[Scheduler] Triggering daily balance report for date: ${dateKey}`);
+          lastSentReportDate = dateKey;
+          await sendDailyBalanceReport();
+        }
+      } catch (err: any) {
+        console.error('[Scheduler] Error in daily balance report check:', err.message);
+      }
+    }, 30000); // Check every 30 seconds
+    console.log('[Scheduler] Daily balance report scheduler started (Target: 08:20 Beijing Time)');
   });
 
   // WebSocket Server for real-time updates

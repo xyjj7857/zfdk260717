@@ -251,6 +251,7 @@ export interface TradeLog {
   amp?: number; // 新增：振幅
   mValue?: number; // 新增：M值
   realA?: number; // 新增：真实A
+  k2?: number; // 新增：k2值
   openTime: number;
   closeTime: number;
   status: 'OPEN' | 'CLOSED';

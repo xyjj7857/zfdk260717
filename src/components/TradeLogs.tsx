@@ -7,17 +7,27 @@ const formatPrice = (val: number | string | undefined | null): string => {
   const num = Number(val);
   if (isNaN(num)) return String(val);
   
-  const formatted = num.toPrecision(10);
-  const parsed = parseFloat(formatted);
-  const str = parsed.toString();
-  
-  if (str.includes('e-')) {
-    const parts = str.split('e-');
-    const exp = parseInt(parts[1], 10);
-    const fixedDecimals = exp + 9;
-    return parsed.toFixed(fixedDecimals).replace(/\.?0+$/, '');
+  let str = num.toString();
+  if (str.includes('e')) {
+    str = num.toFixed(20).replace(/0+$/, '').replace(/\.$/, '');
   }
-  return str;
+  
+  let digitCount = 0;
+  let result = '';
+  for (let i = 0; i < str.length; i++) {
+    const char = str[i];
+    if (char >= '0' && char <= '9') {
+      digitCount++;
+    }
+    result += char;
+    if (digitCount === 10) {
+      break;
+    }
+  }
+  if (result.endsWith('.')) {
+    result = result.slice(0, -1);
+  }
+  return result;
 };
 
 export default function TradeLogs({ tradeLogs, onClear, accountId }: { tradeLogs: TradeLog[], onClear: () => void, accountId: string }) {
@@ -101,7 +111,7 @@ export default function TradeLogs({ tradeLogs, onClear, accountId }: { tradeLogs
   const downloadCSV = () => {
     if (filteredLogs.length === 0) return;
     
-    const headers = ['ID', '合约', '方向', '杠杆', '数量', '资金费率(下单)', '振幅', 'M值', '真实A', '开仓价', '平仓价', '盈亏', '手续费', '利润率', '开仓时间', '平仓时间', '状态'];
+    const headers = ['ID', '合约', '方向', '杠杆', '数量', '资金费率(下单)', '振幅', 'M值', '真实A', '单K2', '开仓价', '平仓价', '盈亏', '手续费', '利润率', '开仓时间', '平仓时间', '状态'];
     const rows = filteredLogs.map(log => [
       log.id,
       log.symbol,
@@ -112,6 +122,7 @@ export default function TradeLogs({ tradeLogs, onClear, accountId }: { tradeLogs
       log.amp !== undefined ? log.amp.toFixed(2) + '%' : '--',
       log.mValue !== undefined ? log.mValue.toFixed(2) : '--',
       log.realA ? log.realA.toFixed(2) + '%' : '--',
+      log.k2 !== undefined && log.k2 !== null ? log.k2.toFixed(2) + '%' : '--',
       formatPrice(log.entryPrice),
       formatPrice(log.exitPrice),
       log.pnl.toFixed(4),
@@ -244,6 +255,7 @@ export default function TradeLogs({ tradeLogs, onClear, accountId }: { tradeLogs
                 <th className="pb-4 font-normal w-[80px]">振幅</th>
                 <th className="pb-4 font-normal w-[80px]">M值</th>
                 <th className="pb-4 font-normal w-[80px]">真实A</th>
+                <th className="pb-4 font-normal w-[80px]">单K2</th>
                 <th className="pb-4 font-normal w-[130px]">开仓价</th>
                 <th className="pb-4 font-normal w-[130px]">平仓价</th>
                 <th className="pb-4 font-normal w-[130px]">盈亏(USDT)</th>
@@ -280,6 +292,9 @@ export default function TradeLogs({ tradeLogs, onClear, accountId }: { tradeLogs
                     <td className="py-5 font-mono text-xs font-bold text-slate-500 whitespace-nowrap">
                       {log.realA ? log.realA.toFixed(2) + '%' : '--'}
                     </td>
+                    <td className="py-5 font-mono text-xs font-bold text-slate-500 whitespace-nowrap">
+                      {log.k2 !== undefined && log.k2 !== null ? log.k2.toFixed(2) + '%' : '--'}
+                    </td>
                     <td className="py-5 font-mono text-sm font-bold text-slate-700 whitespace-nowrap">
                       {formatPrice(log.entryPrice)}
                     </td>
@@ -309,7 +324,7 @@ export default function TradeLogs({ tradeLogs, onClear, accountId }: { tradeLogs
                 ))
               ) : (
                 <tr>
-                  <td colSpan={13} className="py-20 text-center">
+                  <td colSpan={14} className="py-20 text-center">
                     <div className="flex flex-col items-center gap-3">
                       <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center">
                         <Filter size={20} className="text-slate-300" />
