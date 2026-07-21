@@ -116,6 +116,7 @@ export class StrategyEngine {
   private previousPositions: any[] = [];
   private closedPositionsHistory: Map<string, number> = new Map();
   private pendingCloseSymbols: Map<string, number> = new Map();
+  private pendingCloseTradeLogIds: Map<string, string[]> = new Map();
   private lastReplenishmentEmailTime: number = 0;
   private balanceAlertSent: boolean = false;
   private isWithdrawing: boolean = false;
@@ -1037,13 +1038,25 @@ export class StrategyEngine {
         
         // 推送优先：如果是 FILLED 且是平仓方向，立即判定平仓
         if (isFilled) {
-          const openTrade = this.tradeLogs.find(t => t.symbol === symbol && t.status === 'OPEN');
-          if (openTrade) {
-            const isClosingOrder = (openTrade.side === 'BUY' && order.S === 'SELL') || (openTrade.side === 'SELL' && order.S === 'BUY');
-            if (isClosingOrder) {
-              this.addLog('订单', `[推送优先] 检测到平仓成交推送: ${symbol}`, 'success');
-              this.confirmPositionClosed(symbol, parseFloat(order.L), order.T);
-            }
+          // 尝试通过订单 ID 精确匹配 tradeLog
+          let matchedTrade = this.tradeLogs.find(t => 
+            t.symbol === symbol && 
+            t.status === 'OPEN' && 
+            (t.tpOrderId === order.i?.toString() || t.slOrderId === order.i?.toString())
+          );
+          
+          if (!matchedTrade) {
+            // 兜底：寻找平仓方向一致的、最早的开放交易日志
+            matchedTrade = this.tradeLogs.find(t => 
+              t.symbol === symbol && 
+              t.status === 'OPEN' && 
+              ((t.side === 'BUY' && order.S === 'SELL') || (t.side === 'SELL' && order.S === 'BUY'))
+            );
+          }
+
+          if (matchedTrade) {
+            this.addLog('订单', `[推送优先] 检测到平仓成交推送: ${symbol}, 匹配交易ID: ${matchedTrade.id}`, 'success');
+            this.confirmPositionClosed(symbol, parseFloat(order.L), order.T, matchedTrade.id);
           }
         }
       } else {
@@ -1141,15 +1154,19 @@ export class StrategyEngine {
     }, 15000); // 防抖大幅拉长至 15000ms：由 WebSocket 内存同步保障实时性，REST 仅用于极低频率对账检测
   }
 
-  private async confirmPositionClosed(symbol: string, exitPrice?: number, exitTime?: number) {
+  private async confirmPositionClosed(symbol: string, exitPrice?: number, exitTime?: number, specificTradeLogId?: string) {
     // 1. 记录平仓时间用于冷却期
     this.closedPositionsHistory.set(symbol, Date.now());
     this.pendingCloseSymbols.delete(symbol);
+    this.pendingCloseTradeLogIds.delete(symbol);
 
     // 2. 查找并更新交易日志
-    const openTrade = this.tradeLogs.find(t => t.symbol === symbol && t.status === 'OPEN');
-    if (openTrade) {
-      this.addLog('订单', `[最高] binance仓单成交完成 (确认平仓): ${symbol}`, 'success');
+    const openTrades = specificTradeLogId
+      ? this.tradeLogs.filter(t => t.id === specificTradeLogId && t.status === 'OPEN')
+      : this.tradeLogs.filter(t => t.symbol === symbol && t.status === 'OPEN');
+
+    if (openTrades.length > 0) {
+      this.addLog('订单', `[最高] binance仓单成交完成 (确认平仓): ${symbol}, 共 ${openTrades.length} 个订单需要关闭`, 'success');
       
       try {
         // 优化方案：如果没有传入价格（如通过轮询检测到的平仓），先尝试同步获取当前价格作为占位，防止出现 --
@@ -1161,16 +1178,18 @@ export class StrategyEngine {
           }
         }
 
-        // 标记为已关闭
-        this.updateTradeLog(openTrade.id, {
-          status: 'CLOSED',
-          closeTime: exitTime || Date.now(),
-          exitPrice: priceToUse || openTrade.exitPrice
-        });
+        for (const openTrade of openTrades) {
+          // 标记为已关闭
+          this.updateTradeLog(openTrade.id, {
+            status: 'CLOSED',
+            closeTime: exitTime || Date.now(),
+            exitPrice: priceToUse || openTrade.exitPrice
+          });
 
-        // 3. 异步补全成交详情
-        // 延迟 2 秒获取，给币安 API 一点同步时间
-        setTimeout(() => this.fetchAndFillTradeDetails(openTrade.id, symbol, openTrade.openTime), 2000);
+          // 3. 异步补全成交详情
+          // 延迟 2 秒获取，给币安 API 一点同步时间
+          setTimeout(() => this.fetchAndFillTradeDetails(openTrade.id, symbol, openTrade.openTime), 2000);
+        }
       } catch (e: any) {
         this.addLog('系统', `确认平仓失败: ${e.message}`, 'error');
       }
@@ -1286,12 +1305,12 @@ export class StrategyEngine {
     }
   }
 
-  async fetchAccountData(options: { skipCleanup?: boolean } = {}) {
+  async fetchAccountData(options: { skipCleanup?: boolean; force?: boolean } = {}) {
     if (this.checkBannedStatus()) return;
     
     // 强制刷新频率限制：放宽至 2000 毫秒，避免突发事件击穿
     const now = Date.now();
-    if (now - this.lastAccountFetchTime < 2000) {
+    if (!options.force && (now - this.lastAccountFetchTime < 2000)) {
       return;
     }
     this.lastAccountFetchTime = now;
@@ -1339,6 +1358,22 @@ export class StrategyEngine {
         return true;
       });
 
+      // 映射 Algo 订单到统一格式（提前到此定义，以便后续确认逻辑和防抖逻辑共享使用）
+      const mappedAlgoOrders = (Array.isArray(openAlgoOrders) ? openAlgoOrders : (openAlgoOrders?.orders || openAlgoOrders?.data || []))
+        .map((o: any) => ({
+          ...o,
+          isAlgo: true,
+          algoId: o.algoId || o.orderId || o.strategyId,
+          orderId: o.algoId || o.orderId || o.strategyId,
+          origQty: o.quantity || o.origQty || o.totalQuantity,
+          price: o.price || '0',
+          stopPrice: o.stopPrice || o.triggerPrice || o.activationPrice,
+          type: o.algoType || o.strategyType || o.type || 'ALGO',
+          time: o.time || o.updateTime || o.createTime
+        }));
+
+      const combinedOrders = [...openOrders, ...mappedAlgoOrders];
+
       // 清理已经彻底消失的粉尘标记
       const currentAllSymbols = new Set(positions.filter((p: any) => parseFloat(p.positionAmt) !== 0).map((p: any) => p.symbol));
       this.notifiedDustSymbols.forEach(sym => {
@@ -1372,9 +1407,22 @@ export class StrategyEngine {
 
           // 2. 异步确认逻辑
           const count = (this.pendingCloseSymbols.get(symbol) || 0) + 1;
+          if (count === 1) {
+            const openTrades = this.tradeLogs.filter(t => t.symbol === symbol && t.status === 'OPEN');
+            this.pendingCloseTradeLogIds.set(symbol, openTrades.map(t => t.id));
+          }
+
           if (count >= 2) {
             this.addLog('系统', `持仓轮询为空确认完成，进行平仓: ${symbol}`, 'warning');
-            this.confirmPositionClosed(symbol);
+            const targetTradeLogIds = this.pendingCloseTradeLogIds.get(symbol) || [];
+            if (targetTradeLogIds.length > 0) {
+              for (const logId of targetTradeLogIds) {
+                await this.confirmPositionClosed(symbol, undefined, undefined, logId);
+              }
+            } else {
+              await this.confirmPositionClosed(symbol);
+            }
+            this.pendingCloseTradeLogIds.delete(symbol);
           } else {
             this.pendingCloseSymbols.set(symbol, count);
             this.addLog('系统', `检测到持仓消失，进入异步确认期 (第 ${count} 次): ${symbol}`, 'info');
@@ -1386,29 +1434,38 @@ export class StrategyEngine {
 
       // 如果持仓重新出现，清除待确认状态
       activePositions.forEach(p => {
-        if (this.pendingCloseSymbols.has(p.symbol)) {
-          this.addLog('系统', `持仓重新出现，取消平仓确认: ${p.symbol}`, 'info');
-          this.pendingCloseSymbols.delete(p.symbol);
+        const symbol = p.symbol;
+        if (this.pendingCloseSymbols.has(symbol)) {
+          // 检查这是否确实是之前待确认平仓的那个交易重新出现（即闪烁），还是说是一个全新的交易
+          const openTrades = this.tradeLogs.filter(t => t.symbol === symbol && t.status === 'OPEN');
+          const targetTradeLogIds = this.pendingCloseTradeLogIds.get(symbol) || [];
+          
+          let isFlicker = true;
+          for (const logId of targetTradeLogIds) {
+            const openTrade = openTrades.find(t => t.id === logId);
+            if (openTrade && (openTrade.tpOrderId || openTrade.slOrderId)) {
+              const hasOldOrders = combinedOrders.some(o => 
+                (openTrade.tpOrderId && o.orderId.toString() === openTrade.tpOrderId) || 
+                (openTrade.slOrderId && o.orderId.toString() === openTrade.slOrderId)
+              );
+              if (!hasOldOrders) {
+                isFlicker = false;
+                break;
+              }
+            }
+          }
+
+          if (isFlicker) {
+            this.addLog('系统', `持仓重新出现且包含旧挂单/无挂单记录，确认为闪烁，取消平仓确认: ${symbol}`, 'info');
+            this.pendingCloseSymbols.delete(symbol);
+            this.pendingCloseTradeLogIds.delete(symbol);
+          } else {
+            this.addLog('系统', `持仓重新出现但未包含旧挂单，确认为新开仓，不取消旧仓平仓确认: ${symbol}`, 'info');
+          }
         }
       });
 
       this.previousPositions = activePositions;
-
-      // 映射 Algo 订单到统一格式
-      const mappedAlgoOrders = (Array.isArray(openAlgoOrders) ? openAlgoOrders : (openAlgoOrders?.orders || openAlgoOrders?.data || []))
-        .map((o: any) => ({
-          ...o,
-          isAlgo: true,
-          algoId: o.algoId || o.orderId || o.strategyId,
-          orderId: o.algoId || o.orderId || o.strategyId,
-          origQty: o.quantity || o.origQty || o.totalQuantity,
-          price: o.price || '0',
-          stopPrice: o.stopPrice || o.triggerPrice || o.activationPrice,
-          type: o.algoType || o.strategyType || o.type || 'ALGO',
-          time: o.time || o.updateTime || o.createTime
-        }));
-
-      const combinedOrders = [...openOrders, ...mappedAlgoOrders];
 
       // 幽灵仓单优化：有持仓但无任何委托单 (5秒检测)
       // 排除正在下单中的情况，以及 30 秒内新开的仓位
@@ -1496,29 +1553,57 @@ export class StrategyEngine {
           ordersToCancel.push(...orphanOrders);
         }
 
-        // 2. 收集重复挂单：每个持仓币种只能有一个 Limit 和一个 Algo 委托单
+        // 2. 收集重复挂单：每个持仓币种只能有一个 Limit 和一个 Algo 委托单，优先基于订单 ID 关联进行精准清理
         for (const symbol of positionSymbols) {
           const symbolOrders = combinedOrders.filter(o => o.symbol === symbol);
           
-          // 显式按时间排序 (升序)，确保索引 0 是最早的订单
-          const limitOrders = symbolOrders
-            .filter(o => !o.isAlgo)
-            .sort((a, b) => (Number(a.time) || 0) - (Number(b.time) || 0));
+          const openTradesOfSymbol = this.tradeLogs.filter(t => t.symbol === symbol && t.status === 'OPEN');
+          const legitimateOrderIds = new Set<string>();
+          let hasPopulatedIds = false;
+          
+          openTradesOfSymbol.forEach(t => {
+            if (t.tpOrderId) {
+              legitimateOrderIds.add(t.tpOrderId);
+              hasPopulatedIds = true;
+            }
+            if (t.slOrderId) {
+              legitimateOrderIds.add(t.slOrderId);
+              hasPopulatedIds = true;
+            }
+          });
+
+          if (hasPopulatedIds) {
+            // 如果有记录的关联订单 ID，精确定位并清理非关联的冗余订单
+            const redundantOrders = symbolOrders.filter(o => {
+              const oid = (o.algoId || o.orderId || o.strategyId || '').toString();
+              return !legitimateOrderIds.has(oid);
+            });
             
-          const algoOrders = symbolOrders
-            .filter(o => o.isAlgo)
-            .sort((a, b) => (Number(a.time) || 0) - (Number(b.time) || 0));
+            if (redundantOrders.length > 0) {
+              this.addLog('清理', `[精准清理] 检测到 ${symbol} 有 ${redundantOrders.length} 个非关联的冗余挂单，准备清理...`, 'warning');
+              ordersToCancel.push(...redundantOrders);
+            }
+          } else {
+            // 兜底逻辑：显式按时间排序 (升序)，确保索引 0 是最早的订单
+            const limitOrders = symbolOrders
+              .filter(o => !o.isAlgo)
+              .sort((a, b) => (Number(a.time) || 0) - (Number(b.time) || 0));
+              
+            const algoOrders = symbolOrders
+              .filter(o => o.isAlgo)
+              .sort((a, b) => (Number(a.time) || 0) - (Number(b.time) || 0));
 
-          if (limitOrders.length > 1) {
-            const redundant = limitOrders.slice(1);
-            this.addLog('清理', `检测到 ${symbol} 有多个 Limit 挂单 (${limitOrders.length})，将清理 ${redundant.length} 个冗余订单，保留最早的一张。`, 'warning');
-            ordersToCancel.push(...redundant);
-          }
+            if (limitOrders.length > 1) {
+              const redundant = limitOrders.slice(1);
+              this.addLog('清理', `检测到 ${symbol} 有多个 Limit 挂单 (${limitOrders.length})，将清理 ${redundant.length} 个冗余订单，保留最早的一张。`, 'warning');
+              ordersToCancel.push(...redundant);
+            }
 
-          if (algoOrders.length > 1) {
-            const redundant = algoOrders.slice(1);
-            this.addLog('清理', `检测到 ${symbol} 有多个 Algo 挂单 (${algoOrders.length})，将清理 ${redundant.length} 个冗余订单，保留最早的一张。`, 'warning');
-            ordersToCancel.push(...redundant);
+            if (algoOrders.length > 1) {
+              const redundant = algoOrders.slice(1);
+              this.addLog('清理', `检测到 ${symbol} 有多个 Algo 挂单 (${algoOrders.length})，将清理 ${redundant.length} 个冗余订单，保留最早的一张。`, 'warning');
+              ordersToCancel.push(...redundant);
+            }
           }
         }
 
@@ -3689,15 +3774,26 @@ export class StrategyEngine {
       if (executionData && executionData.qty > 0) {
         posEstablished = true;
         this.addLog('下单', `[高速探测] 使用开仓返回的成交数据: ${symbol}, 数量: ${executionData.qty}`, 'success');
+        // 强制进行一次完整的账户数据更新，确保 currentPosition 等内存中的变量完全正确
+        await this.fetchAccountData({ force: true });
       }
 
       while (!posEstablished && posAttempts < 20) { // 降低尝试次数，拉长间隔
-        // 强制刷新账户数据
-        await this.fetchAccountData();
-        
-        if (this.currentPosition && this.currentPosition.symbol === symbol && Math.abs(this.currentPosition.amount) > 0) {
-          posEstablished = true;
-          break;
+        try {
+          // 方案B 轻量级优化：通过仅查询该单币种的仓位数据，避免多次调用全套全账户接口带来的API权重高消耗
+          const positions = await this.binance.getPositionRisk(symbol);
+          const p = positions.find((item: any) => item.symbol === symbol);
+          if (p) {
+            const amount = Math.abs(parseFloat(p.positionAmt));
+            if (amount > 0) {
+              // 仓位已确立，立即通过强刷单接口同步完整的内存数据
+              await this.fetchAccountData({ force: true });
+              posEstablished = true;
+              break;
+            }
+          }
+        } catch (err: any) {
+          this.addLog('下单', `检查 ${symbol} 持仓异常: ${err.message}`, 'warning');
         }
         
         await new Promise(resolve => setTimeout(resolve, 1000)); // 拉长轮询间隔到 1000ms
@@ -3755,8 +3851,10 @@ export class StrategyEngine {
 
       // 检查是否已经存在挂单，避免重复挂单风险
       const existingOrders = this.accountData.openOrders.filter((o: any) => o.symbol === symbol);
-      const hasLimit = existingOrders.some((o: any) => !o.isAlgo);
-      const hasAlgo = existingOrders.some((o: any) => o.isAlgo);
+      const limitOrder = existingOrders.find((o: any) => !o.isAlgo);
+      const algoOrder = existingOrders.find((o: any) => o.isAlgo);
+      const hasLimit = !!limitOrder;
+      const hasAlgo = !!algoOrder;
 
       // 挂止盈单 (Limit Sell/Buy)
       if (!hasLimit && tpEnabled !== false && sideTpEnabled) {
@@ -3769,13 +3867,19 @@ export class StrategyEngine {
           timeInForce: 'GTC',
           reduceOnly: 'true'
         });
-        this.addLog('下单', `[最高] limit挂单完成: ${symbol}, 方向: ${side === 'BUY' ? 'SELL' : 'BUY'}, 价格: ${formattedTP}, 订单ID: ${tpOrder.orderId}`, 'success', tpOrder);
+        const tpOrderIdStr = tpOrder.orderId.toString();
+        this.addLog('下单', `[最高] limit挂单完成: ${symbol}, 方向: ${side === 'BUY' ? 'SELL' : 'BUY'}, 价格: ${formattedTP}, 订单ID: ${tpOrderIdStr}`, 'success', tpOrder);
+        this.updateTradeLog(orderId, { tpOrderId: tpOrderIdStr });
       } else if (tpEnabled === false) {
         this.addLog('下单', `${symbol} 已关闭止盈挂单功能（全局）`, 'info');
       } else if (!sideTpEnabled) {
         this.addLog('下单', `${symbol} 已关闭 ${side === 'BUY' ? '多' : '空'}单止盈挂单功能`, 'info');
       } else {
-        this.addLog('下单', `${symbol} 已存在 Limit 挂单，跳过重复挂单`, 'info');
+        this.addLog('下单', `${symbol} 已存在 Limit 挂单，跳过重复挂单并绑定当前订单号`, 'info');
+        if (limitOrder) {
+          const tpOrderIdStr = limitOrder.orderId.toString();
+          this.updateTradeLog(orderId, { tpOrderId: tpOrderIdStr });
+        }
       }
 
       // 只有在 limit 挂单成功后，再下 algo 委托单
@@ -3806,7 +3910,9 @@ export class StrategyEngine {
             triggerPrice: formattedSL,
             reduceOnly: 'true'
           });
-          this.addLog('下单', `[最高] algo挂单完成: ${symbol}, 方向: ${side === 'BUY' ? 'SELL' : 'BUY'}, 触发价: ${formattedSL}, 订单ID: ${slOrder.algoId || slOrder.orderId}`, 'success', slOrder);
+          const slOrderIdStr = (slOrder.algoId || slOrder.orderId).toString();
+          this.addLog('下单', `[最高] algo挂单完成: ${symbol}, 方向: ${side === 'BUY' ? 'SELL' : 'BUY'}, 触发价: ${formattedSL}, 订单ID: ${slOrderIdStr}`, 'success', slOrder);
+          this.updateTradeLog(orderId, { slOrderId: slOrderIdStr });
         } catch (algoError: any) {
           // 捕捉 algo 订单特定的异常，避免中断整个流程
           this.addLog('下单', `挂 Algo 止损单失败: ${algoError.message}`, 'error');
@@ -3820,7 +3926,11 @@ export class StrategyEngine {
       } else if (!sideSlEnabled) {
         this.addLog('下单', `${symbol} 已关闭 ${side === 'BUY' ? '多' : '空'}单止损挂单功能`, 'info');
       } else {
-        this.addLog('下单', `${symbol} 已存在 Algo 挂单，跳过重复挂单`, 'info');
+        this.addLog('下单', `${symbol} 已存在 Algo 挂单，跳过重复挂单并绑定当前订单号`, 'info');
+        if (algoOrder) {
+          const slOrderIdStr = (algoOrder.algoId || algoOrder.orderId).toString();
+          this.updateTradeLog(orderId, { slOrderId: slOrderIdStr });
+        }
       }
 
     } catch (error: any) {

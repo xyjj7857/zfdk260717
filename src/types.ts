@@ -255,6 +255,8 @@ export interface TradeLog {
   openTime: number;
   closeTime: number;
   status: 'OPEN' | 'CLOSED';
+  tpOrderId?: string; // 关联的止盈单订单号
+  slOrderId?: string; // 关联的止损单订单号
 }
 
 export interface LogEntry {
